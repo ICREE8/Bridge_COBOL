@@ -2,12 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { Header } from '@/components/Header';
+import { HowItWorksStrip } from '@/components/HowItWorksStrip';
 import { AccountsPanel, AccountData } from '@/components/AccountsPanel';
-import { HexMemoryInspector } from '@/components/HexMemoryInspector';
 import { TransferConsole } from '@/components/TransferConsole';
-import { HexPacketTracer, PacketTraceData } from '@/components/HexPacketTracer';
-import { SolanaSettlementPanel, SettlementData } from '@/components/SolanaSettlementPanel';
-import { AuditLogFeed, AuditEventItem } from '@/components/AuditLogFeed';
+import { ContextualDetailPanel, ContextTab } from '@/components/ContextualDetailPanel';
+import { PacketTraceData } from '@/components/HexPacketTracer';
+import { SettlementData } from '@/components/SolanaSettlementPanel';
+import { AuditEventItem } from '@/components/AuditLogFeed';
+import { JargonTooltip } from '@/components/JargonTooltip';
+import { Zap, ShieldCheck } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -31,13 +34,16 @@ export default function Dashboard() {
       rawBalanceHex: ['0x00', '0x00', '0x07', '0x00', '0x05', '0x0C']
     }
   ]);
-  const [selectedAccount, setSelectedAccount] = useState<AccountData | null>(accounts[0]);
+  const [selectedAccount, setSelectedAccount] = useState<AccountData | null>(null);
   const [activeLockAccount, setActiveLockAccount] = useState<string | null>(null);
   const [lastTrace, setLastTrace] = useState<PacketTraceData | null>(null);
   const [lastSettlement, setLastSettlement] = useState<SettlementData | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEventItem[]>([]);
   const [latencyMs, setLatencyMs] = useState<number>(1.8);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Progressive Disclosure: Default to friendly STANDBY view when nothing is selected
+  const [contextTab, setContextTab] = useState<ContextTab>('STANDBY');
 
   // Load initial accounts from Bridge REST API
   const fetchAccounts = async () => {
@@ -49,9 +55,11 @@ export default function Dashboard() {
         const data = await res.json();
         if (data.accounts && data.accounts.length > 0) {
           setAccounts(data.accounts);
-          // Keep selected account or set to first
-          const found = data.accounts.find((a: AccountData) => a.id === selectedAccount?.id);
-          setSelectedAccount(found || data.accounts[0]);
+          // If an account was previously selected, keep it updated
+          if (selectedAccount) {
+            const found = data.accounts.find((a: AccountData) => a.id === selectedAccount.id);
+            if (found) setSelectedAccount(found);
+          }
         }
       }
     } catch (err) {
@@ -108,7 +116,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Create Account handler
+  // Create Account handler (inline drawer)
   const handleCreateAccount = async (id: string, initialBalance: number, owner: string) => {
     const res = await fetch(`${API_BASE}/api/v1/accounts`, {
       method: 'POST',
@@ -122,7 +130,7 @@ export default function Dashboard() {
     await fetchAccounts();
   };
 
-  // Transfer handler
+  // Transfer handler: automatically focuses on Packet Tracer & Settlement result
   const handleExecuteTransfer = async (params: {
     action: 'DEBIT' | 'CREDIT';
     accountId: string;
@@ -147,13 +155,15 @@ export default function Dashboard() {
       }
 
       await fetchAccounts();
+      // Automatically switch to Packet Tracer + Settlement result as requested!
+      setContextTab('TRANSFER_DETAILS');
       return data;
     } finally {
       setActiveLockAccount(null);
     }
   };
 
-  // 5x Concurrent Stress Test handler (Demonstrates blocking fcntl record lock queuing)
+  // 5x Concurrent Stress Test handler
   const handleTriggerStressTest = async (accountId: string) => {
     setActiveLockAccount(accountId);
     try {
@@ -164,103 +174,148 @@ export default function Dashboard() {
       });
       const data = await res.json();
       await fetchAccounts();
+      // Automatically switch to Packet Tracer + Settlement result
+      setContextTab('TRANSFER_DETAILS');
       return data;
     } finally {
       setActiveLockAccount(null);
     }
   };
 
+  // Select account and reveal memory inspector
+  const handleSelectAccount = (acct: AccountData) => {
+    setSelectedAccount(acct);
+    setContextTab('ACCOUNT_MEMORY');
+  };
+
   const totalLedgerBalance = accounts.reduce((acc, curr) => acc + (curr.balance || 0), 0);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F17]">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#E5E7EB] transition-colors duration-200">
+      {/* Global Navigation Header with 3 Core Statuses + Theme Switcher */}
       <Header
         role={role}
         onRoleChange={setRole}
         latencyMs={latencyMs}
         onRefresh={fetchAccounts}
         isRefreshing={isRefreshing}
+        activeLockAccount={activeLockAccount}
       />
 
-      <main className="flex-1 p-6 max-w-[1700px] w-full mx-auto space-y-6">
-        {/* Top Metric Cards Row */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 font-mono-code">
-          <div className="bg-[#111827] border border-[#1F2937] p-4 rounded-xl">
-            <span className="text-xs text-[#9CA3AF]">TOTAL MANAGED KSDS RECORDS</span>
-            <div className="text-2xl font-bold text-white mt-1">
-              {accounts.length} ACCOUNTS
+      <main className="flex-1 p-4 sm:p-6 max-w-[1700px] w-full mx-auto space-y-5">
+        {/* Always-Visible "How This Works" Explainer Strip with Subtitles */}
+        <HowItWorksStrip />
+
+        {/* Top Metric Cards Row with Dual Microcopy Labels */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono-code">
+          {/* Card 1: Accounts */}
+          <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] p-4 rounded-xl shadow-xs transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 dark:text-[#9CA3AF] font-sans font-medium">
+                Managed Accounts (VSAM KSDS)
+              </span>
+              <JargonTooltip term="VSAM KSDS" />
             </div>
-            <span className="text-[11px] text-blue-400 mt-1 block">Indexed by Account ID Key</span>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+              {accounts.length} Accounts
+            </div>
+            <span className="text-[11px] text-blue-600 dark:text-blue-400 mt-1 block font-sans">
+              Indexed by Account ID Key
+            </span>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] p-4 rounded-xl">
-            <span className="text-xs text-[#9CA3AF]">AGGREGATE LEDGER BALANCE</span>
-            <div className="text-2xl font-bold text-emerald-400 mt-1">
+          {/* Card 2: Balance with Dual Label */}
+          <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] p-4 rounded-xl shadow-xs transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 dark:text-[#9CA3AF] font-sans font-medium">
+                Aggregate Balance (COMP-3 packed)
+              </span>
+              <JargonTooltip term="COMP-3" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
               ${totalLedgerBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
-            <span className="text-[11px] text-amber-400 mt-1 block">Packed COMP-3 Binary Format</span>
+            <span className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 block font-sans">
+              Binary Packed &bull; Zero IEEE-754 Float Error
+            </span>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] p-4 rounded-xl">
-            <span className="text-xs text-[#9CA3AF]">TRANSLATION + EXECUTION LATENCY</span>
-            <div className="text-2xl font-bold text-blue-400 mt-1">
+          {/* Card 3: Execution Latency */}
+          <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] p-4 rounded-xl shadow-xs transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 dark:text-[#9CA3AF] font-sans font-medium">
+                Bridge Execution Latency
+              </span>
+              <Zap className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="text-2xl font-bold text-blue-700 dark:text-blue-400 mt-1">
               {latencyMs} MS
             </div>
-            <span className="text-[11px] text-emerald-400 mt-1 block">Target: p99 &lt; 12ms (Beaten by 6x)</span>
+            <span className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 block font-sans">
+              Target: &lt;12ms (6x faster)
+            </span>
           </div>
 
-          <div className="bg-[#111827] border border-[#1F2937] p-4 rounded-xl">
-            <span className="text-xs text-[#9CA3AF]">VSAM EXCLUSIVE CONTROL</span>
-            <div className={`text-2xl font-bold mt-1 ${activeLockAccount ? 'text-amber-400 animate-pulse' : 'text-emerald-400'}`}>
-              {activeLockAccount ? 'RECORD LOCKED' : 'EXCLUSIVE QUEUE IDLE'}
+          {/* Card 4: Exclusive Control with Dual Label */}
+          <div className="bg-white dark:bg-[#111827] border border-slate-200 dark:border-[#1F2937] p-4 rounded-xl shadow-xs transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 dark:text-[#9CA3AF] font-sans font-medium">
+                VSAM Exclusive Control
+              </span>
+              <JargonTooltip term="fcntl lock" />
             </div>
-            <span className="text-[11px] text-[#9CA3AF] mt-1 block">POSIX fcntl Record Locking</span>
+            <div className={`text-xl font-bold mt-1 ${activeLockAccount ? 'text-amber-600 dark:text-amber-400 animate-pulse' : 'text-emerald-700 dark:text-emerald-400'}`}>
+              {activeLockAccount ? 'Account Currently Locked' : 'Exclusive Queue Free'}
+            </div>
+            <span className="text-[11px] text-slate-500 dark:text-[#9CA3AF] mt-1 block font-sans">
+              POSIX fcntl Record Locking Active
+            </span>
           </div>
         </div>
 
-        {/* 3-Column Core Workspace Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          {/* Column 1: Accounts Panel & Raw Hex Memory Inspector */}
-          <div className="space-y-6 flex flex-col">
-            <div className="h-[360px]">
-              <AccountsPanel
-                accounts={accounts}
-                selectedAccountId={selectedAccount?.id || null}
-                onSelectAccount={setSelectedAccount}
-                onCreateAccount={handleCreateAccount}
-                role={role}
-                activeLockAccount={activeLockAccount}
-              />
-            </div>
-            <div className="flex-1 min-h-[300px]">
-              <HexMemoryInspector account={selectedAccount} />
-            </div>
+        {/* Click-to-Focus 3-Column Core Workspace */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch min-h-[580px]">
+          {/* Column 1: Clean Accounts List (3 cols) */}
+          <div className="lg:col-span-3 h-[580px] lg:h-auto">
+            <AccountsPanel
+              accounts={accounts}
+              selectedAccountId={selectedAccount?.id || null}
+              onSelectAccount={handleSelectAccount}
+              onCreateAccount={handleCreateAccount}
+              role={role}
+              activeLockAccount={activeLockAccount}
+            />
           </div>
 
-          {/* Column 2: Transfer Console & Side-by-Side Packet Tracer */}
-          <div className="space-y-6 flex flex-col">
-            <div className="h-[360px]">
-              <TransferConsole
-                accounts={accounts}
-                selectedAccountId={selectedAccount?.id || null}
-                onExecuteTransfer={handleExecuteTransfer}
-                onTriggerStressTest={handleTriggerStressTest}
-                role={role}
-              />
-            </div>
-            <div className="flex-1 min-h-[300px]">
-              <HexPacketTracer lastTrace={lastTrace} />
-            </div>
+          {/* Column 2: Primary Action Area (4 cols) */}
+          <div className="lg:col-span-4 h-[580px] lg:h-auto">
+            <TransferConsole
+              accounts={accounts}
+              selectedAccountId={selectedAccount?.id || null}
+              onExecuteTransfer={handleExecuteTransfer}
+              onTriggerStressTest={handleTriggerStressTest}
+              onInspectTransfer={() => setContextTab('TRANSFER_DETAILS')}
+              role={role}
+              activeLockAccount={activeLockAccount}
+            />
           </div>
 
-          {/* Column 3: Modern Solana Settlement & Streaming Audit Log Feed */}
-          <div className="space-y-6 flex flex-col">
-            <div className="h-[280px]">
-              <SolanaSettlementPanel settlement={lastSettlement} />
-            </div>
-            <div className="flex-1 min-h-[380px]">
-              <AuditLogFeed events={auditEvents} />
-            </div>
+          {/* Column 3: Single Contextual Detail Panel (5 cols) */}
+          <div className="lg:col-span-5 h-[580px] lg:h-auto">
+            <ContextualDetailPanel
+              activeTab={contextTab}
+              onTabChange={setContextTab}
+              selectedAccount={selectedAccount}
+              lastTrace={lastTrace}
+              lastSettlement={lastSettlement}
+              auditEvents={auditEvents}
+              onQuickInspectAccount={() => {
+                if (accounts.length > 0) {
+                  setSelectedAccount(accounts[0]);
+                  setContextTab('ACCOUNT_MEMORY');
+                }
+              }}
+            />
           </div>
         </div>
       </main>
