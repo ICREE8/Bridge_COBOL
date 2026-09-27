@@ -1,0 +1,52 @@
+services:
+  gnucobol-core:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cobol
+    container_name: bridge-gnucobol-core
+    ports:
+      - "9999:9999"
+    volumes:
+      - cobol-data:/app/core/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: bridge-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  bridge-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bridge
+    container_name: bridge-api-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - HOST=0.0.0.0
+      - COBOL_TCP_HOST=gnucobol-core
+      - COBOL_TCP_PORT=9999
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - gnucobol-core
+      - redis
+    restart: unless-stopped
+
+  web-cockpit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: bridge-web-cockpit
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - bridge-gateway
+    restart: unless-stopped
+
+volumes:
+  cobol-data:

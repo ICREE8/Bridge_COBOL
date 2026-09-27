@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Next.js build
+.next/
+**/dist/
+
+# COBOL binaries & data files
+core/bin/
+core/data/
+core/src/*.o
+data/
+
+# Environment & logs
+.env*.local
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
